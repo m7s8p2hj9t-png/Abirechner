@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AbiPlaner">
+<title>AbiPlaner</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f2f2f7;--card:#fff;--tx:#111;--mu:#6b6b73;--ac:#0a6cff;--ok:#1a8f3c;--bad:#d93025;--warn:#b26a00;--ln:#e2e2e8;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000;--card:#1c1c1e;--tx:#f2f2f7;--mu:#98989f;--ac:#4c9aff;--ok:#43c463;--bad:#ff6961;--warn:#ffb340;--ln:#38383a}}
+:root[data-theme="dark"]{--bg:#000;--card:#1c1c1e;--tx:#f2f2f7;--mu:#98989f;--ac:#4c9aff;--ok:#43c463;--bad:#ff6961;--warn:#ffb340;--ln:#38383a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:17px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:30px;margin:8px 0 12px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);margin:22px 8px 6px;font-weight:600}
+.card{background:var(--card);border-radius:12px;padding:4px 14px;margin-bottom:10px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--ln)}
+.row:last-child{border-bottom:0}
+input[type=text]{font:inherit;color:var(--tx);background:transparent;border:0;outline:0;text-align:right;width:80px;padding:4px}
+input[type=text].name{text-align:left;width:100%;font-weight:600;font-size:19px}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--ac)}
+.tabs{display:flex;background:var(--ln);border-radius:10px;padding:3px;gap:3px}
+.tabs button{flex:1;border:0;border-radius:8px;padding:8px;font:inherit;font-weight:600;background:transparent;color:var(--tx)}
+.tabs button.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+button.link{border:0;background:transparent;color:var(--ac);font:inherit;padding:10px 0}
+button.del{color:var(--bad);font-size:15px;padding:0}
+.mu{color:var(--mu);font-size:14px}
+.pt{font-weight:700}
+.big{font-size:24px;font-weight:700}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+label.t{display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>AbiPlaner</h1>
+
+<h2>Halbjahr</h2>
+<div class="tabs" id="tabs"></div>
+
+<h2 id="hSub"></h2>
+<div id="subs"></div>
+<div class="card"><button class="link" data-act="add">+ Fach hinzufügen</button></div>
+
+<h2 id="hAvg"></h2>
+<div class="card"><div class="row"><span>Punktedurchschnitt (LK doppelt)</span><span class="pt" id="avg"></span></div></div>
+
+<h2>Abiturprüfungen (0–15 Punkte)</h2>
+<div class="card" id="exams"></div>
+
+<h2>Deine Abi-Übersicht</h2>
+<div class="card" id="sum"></div>
+
+<h2>Bedingungen</h2>
+<div class="card" id="chk"></div>
+<h2>Sichern</h2>
+<div class="card">
+<div class="row"><button class="link" data-act="exp">Stand kopieren</button><button class="link" data-act="imp">Stand einfügen</button></div>
+<div class="row"><textarea id="bk" rows="3" style="width:100%;font:13px monospace;background:transparent;color:var(--tx);border:1px solid var(--ln);border-radius:8px" placeholder="Hier erscheint dein Sicherungstext. Zum Wiederherstellen den Text hier einfügen und auf „Stand einfügen“ tippen."></textarea></div>
+<div class="row mu"><span id="bkm">Tipp: Kopiere den Text und speichere ihn in der Notizen-App.</span></div>
+</div>
+<p class="mu" style="padding:0 8px">Ohne Gewähr. Nicht berücksichtigt: Nachprüfungen, besondere Lernleistung und Sonderregeln einzelner Fächer. Verbindlich sind die OAVO bzw. deine Schule.</p>
+</main>
+
+<script>
+var KEY='abiplaner.hessen.v1';
+function ent(){return{w:'10',o:'10',wt:'50',inc:true}}
+function mk(n,lk){return{name:n,lk:!!lk,e:[ent(),ent(),ent(),ent()]}}
+var S=null;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.subjects){S={q:0,exams:['','','','',''],subjects:[mk('Mathe',1),mk('Deutsch',1),mk('Englisch'),mk('Geschichte')]}}
+var remote=null,tmr=null;
+function save(){S.t=Date.now();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}pushRemote()}
+function pushRemote(){if(!remote)return;clearTimeout(tmr);tmr=setTimeout(function(){remote.set({json:JSON.stringify(S)}).catch(function(){})},600)}
+function num(t){var v=parseFloat(String(t).replace(',','.'));return isNaN(v)?0:v}
+function pts(e){var w=Math.min(Math.max(num(e.wt),0),100)/100;return Math.min(Math.max(Math.round(num(e.w)*w+num(e.o)*(1-w)),0),15)}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
+function grade(t){if(t<300)return'nicht bestanden';var x=Math.max(10,Math.floor((1020-t)/18));return Math.floor(x/10)+','+(x%10)}
+var QN=['Q1','Q2','Q3','Q4'],EX=['Prüfung 1 (LK)','Prüfung 2 (LK)','Prüfung 3 (GK)','Prüfung 4 (GK)','Prüfung 5 (GK)'];
+var armed=-1;
+
+function blockI(){
+  var r={sum:0,cnt:0,lk:0,gk:0,lkP:0,gkP:0,def:0,lkDef:0};
+  S.subjects.forEach(function(s){s.e.forEach(function(e){
+    if(!s.lk&&!e.inc)return;
+    var p=pts(e);
+    if(s.lk){r.lk++;r.lkP+=p;r.sum+=2*p;r.cnt+=2}else{r.gk++;r.gkP+=p;r.sum+=p;r.cnt+=1}
+    if(p<5){r.def++;if(s.lk)r.lkDef++}
+  })});
+  r.done=(r.lk===8&&r.gk===24);
+  r.score=r.cnt?Math.round(r.sum/r.cnt*40):0;
+  return r;
+}
+function valid(){return S.exams.map(function(x){return x===''?NaN:parseInt(x,10)}).filter(function(x){return !isNaN(x)}).map(function(x){return Math.min(Math.max(x,0),15)})}
+
+function renderTabs(){
+  document.getElementById('tabs').innerHTML=QN.map(function(n,i){return'<button data-act="tab" data-i="'+i+'" class="'+(i===S.q?'on':'')+'">'+n+'</button>'}).join('');
+  document.getElementById('hSub').textContent='Fächer in '+QN[S.q];
+  document.getElementById('hAvg').textContent='Durchschnitt '+QN[S.q];
+}
+function numRow(label,i,f,v,suf){
+  return'<div class="row"><span>'+label+'</span><span><input type="text" inputmode="decimal" data-i="'+i+'" data-f="'+f+'" value="'+esc(v)+'">'+(suf||'')+'</span></div>';
+}
+function renderSubs(){
+  document.getElementById('subs').innerHTML=S.subjects.map(function(s,i){
+    var e=s.e[S.q];
+    return'<div class="card">'+
+    '<div class="row"><input type="text" class="name" data-i="'+i+'" data-f="name" value="'+esc(s.name)+'" placeholder="Fach"></div>'+
+    '<div class="row"><label class="t"><input type="checkbox" data-i="'+i+'" data-f="lk"'+(s.lk?' checked':'')+'> Leistungskurs (LK)</label></div>'+
+    numRow('Schriftlich',i,'w',e.w)+numRow('Mündlich',i,'o',e.o)+numRow('Schriftlich zählt',i,'wt',e.wt,' %')+
+    '<div class="row">'+(s.lk?'<span class="mu">LK: wird immer eingebracht</span>':'<label class="t"><input type="checkbox" data-i="'+i+'" data-f="inc"'+(e.inc?' checked':'')+'> Fürs Abi einbringen</label>')+
+    '<span class="pt" data-pt="'+i+'"></span></div>'+
+    '<div class="row"><button class="link del" data-act="del" data-i="'+i+'">'+(armed===i?'Wirklich löschen?':'Fach löschen')+'</button></div></div>';
+  }).join('');
+}
+function renderExams(){
+  document.getElementById('exams').innerHTML=EX.map(function(n,i){return numRow(n,i,'ex',S.exams[i])}).join('');
+}
+function upd(){
+  document.querySelectorAll('[data-pt]').forEach(function(el){var s=S.subjects[el.dataset.pt];el.textContent=pts(s.e[S.q])+' P.'});
+  var w=0,t=0;S.subjects.forEach(function(s){if(s.lk||s.e[S.q].inc){var k=s.lk?2:1;w+=k;t+=k*pts(s.e[S.q])}});
+  document.getElementById('avg').textContent=(w?t/w:0).toFixed(2).replace('.',',');
+  var b=blockI(),v=valid(),b2=v.length?Math.round(v.reduce(function(a,c){return a+c},0)/v.length*20):0,tot=b.score+b2,full=(v.length===5);
+  var lkN=S.subjects.filter(function(s){return s.lk}).length;
+  function r(a,c,x){return'<div class="row"><span>'+a+'</span><span class="'+(x||'')+'">'+c+'</span></div>'}
+  var h=r('Eingebrachte LK-Kurse',b.lk+' / 8')+r('Eingebrachte GK-Kurse',b.gk+' / 24')+r('Block I',b.score+' / 600')+r('Block II',b2+' / 300')+
+    r('Gesamtpunkte','<b>'+tot+' / 900</b>')+r('Abiturnote','<span class="big">'+grade(tot)+'</span>');
+  if(lkN!==2)h+='<div class="row warn"><span>Hinweis: In Hessen gibt es genau 2 Leistungskurse. Aktuell sind '+lkN+' Fächer als LK markiert.</span></div>';
+  if(!b.done||!full)h+='<div class="row mu"><span>Noch nicht alles eingetragen (benötigt: 8 LK-Kurse, 24 GK-Kurse und 5 Prüfungen). Die Note ist eine Hochrechnung.</span></div>';
+  document.getElementById('sum').innerHTML=h;
+  var c=[['Block I: mindestens 200 Punkte',b.score>=200]];
+  if(b.done){c.push(['LK-Kurse: mindestens 80 Punkte (einfach gezählt)',b.lkP>=80]);c.push(['GK-Kurse: mindestens 120 Punkte (einfach gezählt)',b.gkP>=120])}
+  c.push(['Höchstens 6 Kurse unter 5 Punkten',b.def<=6]);c.push(['Davon höchstens 2 Leistungskurse',b.lkDef<=2]);
+  if(full){c.push(['Block II: mindestens 100 Punkte',b2>=100]);c.push(['Gesamt: mindestens 300 Punkte',tot>=300])}
+  document.getElementById('chk').innerHTML=c.map(function(x){return'<div class="row '+(x[1]?'ok':'bad')+'"><span>'+(x[1]?'✓ ':'✗ ')+x[0]+'</span></div>'}).join('');
+}
+function full(){renderTabs();renderSubs();upd()}
+
+document.addEventListener('input',function(ev){
+  var t=ev.target,i=t.dataset.i,f=t.dataset.f;if(f===undefined||t.type==='checkbox')return;
+  if(f==='name')S.subjects[i].name=t.value;
+  else if(f==='ex')S.exams[i]=t.value;
+  else S.subjects[i].e[S.q][f]=t.value;
+  save();upd();
+});
+document.addEventListener('change',function(ev){
+  var t=ev.target,i=t.dataset.i,f=t.dataset.f;if(t.type!=='checkbox')return;
+  if(f==='lk')S.subjects[i].lk=t.checked;
+  if(f==='inc')S.subjects[i].e[S.q].inc=t.checked;
+  save();full();
+});
+document.addEventListener('click',function(ev){
+  var b=ev.target.closest('[data-act]');if(!b)return;
+  var a=b.dataset.act,i=parseInt(b.dataset.i,10);
+  var bk=document.getElementById('bk'),bm=document.getElementById('bkm');
+  if(a==='exp'){bk.value=JSON.stringify(S);bk.focus();bk.select();bm.textContent='Text ausgewählt: kopieren und in der Notizen-App speichern.';try{navigator.clipboard.writeText(bk.value).then(function(){bm.textContent='In die Zwischenablage kopiert. Jetzt in Notizen einfügen.'},function(){})}catch(e){}return}
+  if(a==='imp'){try{var r=JSON.parse(bk.value);if(!r.subjects||!r.exams)throw 0;S=r;save();renderExams();full();bm.textContent='Stand wiederhergestellt.'}catch(e){bm.textContent='Der Text konnte nicht gelesen werden.'}return}
+  if(a==='tab'){S.q=i;armed=-1}
+  if(a==='add'){S.subjects.push(mk('Neues Fach'))}
+  if(a==='del'){if(armed===i){S.subjects.splice(i,1);armed=-1}else{armed=i}}
+  save();full();
+});
+renderExams();full();
+
+/* Speicherung im Konto: bleibt auch erhalten, wenn der Browser den lokalen Speicher löscht */
+(async function(){
+  try{
+    var user=await claude.use('user'),db=await claude.use('db');
+    if(!user||!db)return;
+    var id=await user.id();if(!id)return;
+    var ref=db.doc('data/users/'+id+'/abi');
+    var snap=await ref.get();
+    var rt=-1,r=null;
+    if(snap.exists){r=JSON.parse(snap.data().json);rt=r.t||0}
+    remote=ref;
+    if(r&&r.subjects&&rt>(S.t||0)){
+      S=r;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+      renderExams();full();
+    }else if((S.t||0)>rt){pushRemote()}
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
